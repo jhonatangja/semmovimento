@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Pacotes Parados (Foco em Falhas)</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            background: linear-gradient(90deg, #d9534f, #c9302c);
+            color: white;
+            padding: 25px 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(217, 83, 79, 0.3);
+        }
+        .header h1 { margin: 0; font-size: 28px; }
+        .header p { margin: 5px 0 0; font-size: 16px; opacity: 0.9; }
+        
+        .main-content { display: flex; flex-direction: column; gap: 20px; }
+        
+        .upload-section, .filter-section, .stats-cards, .table-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .upload-section h2, .filter-section h2, .table-card h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #c9302c;
+            font-size: 20px;
+            border-bottom: 2px solid #f0f2f5;
+            padding-bottom: 10px;
+        }
+        
+        input[type="file"] {
+            font-size: 16px; border: 2px dashed #ccc; border-radius: 6px;
+            padding: 10px; width: 100%; box-sizing: border-box; cursor: pointer;
+        }
+        input[type="file"]:hover { border-color: #c9302c; }
+        
+        .load-button {
+            background-color: #d9534f; color: white; padding: 12px 20px;
+            border: none; border-radius: 6px; font-size: 16px; font-weight: 600;
+            cursor: pointer; margin-top: 15px; width: 100%;
+            transition: background-color 0.2s;
+        }
+        .load-button:hover { background-color: #c9302c; }
+        
+        .filter-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 20px;
+        }
+        .filter-group { display: flex; flex-direction: column; }
+        .filter-group label {
+            display: block; font-weight: 600; margin-bottom: 8px; color: #555;
+        }
+
+        /* CARDS DE ESTATÍSTICA (3 colunas) */
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 20px;
+        }
+        .stat-card {
+            background-color: #f9f9f9; border: 1px solid #e0e0e0;
+            padding: 20px; border-radius: 8px;
+        }
+        .stat-card h3 {
+            margin: 0 0 10px; font-size: 16px; color: #555;
+            text-transform: uppercase;
+        }
+        .stat-card h3 i { margin-right: 8px; width: 20px; text-align: center; }
+        .stat-card-value { font-size: 32px; font-weight: 700; }
+        
+        .stat-card.total { border-left: 5px solid #d9534f; }
+        .stat-card.total .stat-card-value { color: #d9534f; }
+        .stat-card.total h3 i { color: #d9534f; }
+        
+        .stat-card.operator { border-left: 5px solid #0275d8; }
+        .stat-card.operator .stat-card-value { color: #0275d8; font-size: 24px; }
+        .stat-card.operator h3 i { color: #0275d8; }
+        
+        .stat-card.reason { border-left: 5px solid #5bc0de; }
+        .stat-card.reason .stat-card-value { color: #5bc0de; font-size: 24px; }
+        .stat-card.reason h3 i { color: #5bc0de; }
+
+        /* Tabelas */
+        .table-container { max-height: 500px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td {
+            border: 1px solid #ddd; padding: 12px 15px;
+            text-align: left; font-size: 14px;
+        }
+        th {
+            background-color: #f4f7f6; font-weight: 600; color: #333;
+            position: sticky; top: 0;
+        }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        
+        /* Ordenação */
+        th[data-sort] { cursor: pointer; user-select: none; position: relative; }
+        th[data-sort]:hover { background-color: #e9ecef; }
+        th[data-sort].sort-asc::after,
+        th[data-sort].sort-desc::after {
+            content: ''; position: absolute; right: 10px; top: 50%;
+            width: 0; height: 0; border-left: 5px solid transparent;
+            border-right: 5px solid transparent; transform: translateY(-50%);
+        }
+        th[data-sort].sort-asc::after { border-bottom: 6px solid #888; }
+        th[data-sort].sort-desc::after { border-top: 6px solid #888; }
+        
+        /* ESTILOS PARA BOTÕES DE AÇÃO */
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #f0f2f5;
+            padding-bottom: 10px;
+        }
+        .table-header h2 {
+            margin: 0;
+            padding: 0;
+            border: none;
+            color: #c9302c;
+            font-size: 20px;
+        }
+        .table-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .action-button {
+            background-color: #0275d8;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .action-button:hover {
+            background-color: #025aa5;
+        }
+        .action-button.export {
+            background-color: #5cb85c;
+        }
+        .action-button.export:hover {
+            background-color: #449d44;
+        }
+        .action-button i {
+            margin-right: 5px;
+        }
+
+        /* ESTILO PARA TOAST */
+        #copyToast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 4px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1001;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 30px;
+            font-size: 17px;
+            opacity: 0;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        #copyToast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1000;
+        }
+        .spinner {
+            border: 8px solid #f3f3f3; border-top: 8px solid #d9534f;
+            border-radius: 50%; width: 60px; height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        .loading p { margin-top: 20px; font-size: 18px; color: #d9534f; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-exclamation-triangle"></i> Dashboard de Pacotes Parados</h1>
+            <p>Foco em Dias Parados, Operadores e Motivos de Falha</p>
+        </header>
+
+        <main class="main-content">
+            <section class="upload-section">
+                <h2><i class="fas fa-file-excel"></i> Carregar Relatório</h2>
+                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv">
+                <button id="loadButton" class="load-button"><i class="fas fa-upload"></i> Carregar Dados</button>
+            </section>
+            
+            <section class="filter-section">
+                <h2><i class="fas fa-filter"></i> Filtros</h2>
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label for="agingFilter">Dias Parados</label>
+                        <select id="agingFilter" multiple></select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="operatorFilter">Operador</label>
+                        <select id="operatorFilter" multiple></select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="reasonFilter">Motivo da Falha</label>
+                        <select id="reasonFilter" multiple></select>
+                    </div>
+                </div>
+            </section>
+
+            <section class="stats-cards">
+                <div class="stat-card total">
+                    <h3><i class="fas fa-box"></i> Total de Pacotes Parados</h3>
+                    <div class="stat-card-value" id="totalPackages">0</div>
+                </div>
+                <div class="stat-card operator">
+                    <h3><i class="fas fa-user-hard-hat"></i> Principal Ofensor</h3>
+                    <div class="stat-card-value" id="topOperator">--</div>
+                </div>
+                <div class="stat-card reason">
+                    <h3><i class="fas fa-exclamation-circle"></i> Principal Motivo</h3>
+                    <div class="stat-card-value" id="topReason">--</div>
+                </div>
+            </section>
+
+            <section style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="table-card">
+                    <h2><i class="fas fa-user-hard-hat"></i> Ranking de Operadores</h2>
+                    <div class="table-container">
+                        <table id="operatorRankTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="key">Operador</th>
+                                    <th data-sort="count">Pacotes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="operatorRankTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="table-card">
+                    <h2><i class="fas fa-exclamation-circle"></i> Ranking de Motivos de Falha</h2>
+                    <div class="table-container">
+                        <table id="reasonRankTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="key">Motivo</th>
+                                    <th data-sort="count">Pacotes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reasonRankTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="table-card">
+                <div class="table-header">
+                    <h2><i class="fas fa-list-check"></i> Detalhes das Remessas</h2>
+                    <div class="table-actions">
+                        <button id="copyButton" class="action-button"><i class="fas fa-copy"></i> Copiar Remessas</button>
+                        <button id="exportButton" class="action-button export"><i class="fas fa-file-excel"></i> Exportar</button>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table id="detailsTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="aging_days">Dias Parados</th>
+                                <th data-sort="remessa">Remessa</th>
+                                <th data-sort="operator">Operador</th>
+                                <th data-sort="reason">Motivo da Falha</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailsTableBody">
+                            <tr><td colspan="4" style="text-align: center;">Carregue um arquivo para ver os dados.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <div class="loading" id="loading" style="display: none;">
+        <div class="spinner"></div>
+        <p>Processando dados...</p>
+    </div>
+    <div id="copyToast"></div>
+
+    <script>
+        // --- CONSTANTES (Nomes das colunas do seu arquivo) ---
+        const COL_REMESSA = 'Remessa';
+        const COL_OPERADOR = 'Operador do bipe mais recente';
+        const COL_ULTIMA_OPERACAO = 'Horário da última operação';
+        const COL_AGING = 'Aging';
+        const COL_CLIENTE = 'Nome fantasia';
+        const COL_MOTIVO_FALHA = 'Nome de pacote problemático';
+
+        // --- VARIÁVEIS GLOBAIS ---
+        let allPackages = [];
+        let currentFilteredPackages = [];
+        let filterAging, filterOperator, filterReason;
+        
+        let sortStates = {
+            operatorRankTable: { column: 'count', order: 'desc' },
+            reasonRankTable: { column: 'count', order: 'desc' },
+            detailsTable: { column: 'aging_days', order: 'desc' }
+        };
+
+        // --- ELEMENTOS DO DOM ---
+        const fileInput = document.getElementById('fileInput');
+        const loadButton = document.getElementById('loadButton');
+        const loadingSpinner = document.getElementById('loading');
+        
+        const totalPackagesEl = document.getElementById('totalPackages');
+        const topOperatorEl = document.getElementById('topOperator');
+        const topReasonEl = document.getElementById('topReason');
+        
+        // --- INICIALIZAÇÃO ---
+        loadButton.addEventListener('click', handleFileLoad);
+        setupHeaderSorters();
+        setupActionButtons();
+
+        function showLoading(show) {
+            loadingSpinner.style.display = show ? 'flex' : 'none';
+        }
+
+        // --- LÓGICA PRINCIPAL ---
+
+        function handleFileLoad() {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Por favor, selecione um arquivo primeiro.");
+                return;
+            }
+            showLoading(true);
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const data = e.target.result;
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                    
+                    allPackages = parseExcelData(jsonData);
+                    initializeFilters();
+                    
+                    sortStates.detailsTable = { column: 'aging_days', order: 'desc' };
+                    
+                    updateDashboard();
+                    
+                } catch (err) {
+                    console.error(err);
+                    alert("Erro ao processar o arquivo Excel. Verifique o console (F12) para detalhes.");
+                } finally {
+                    showLoading(false);
+                }
+            };
+            
+            reader.onerror = function() {
+                alert("Erro ao ler o arquivo.");
+                showLoading(false);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        /**
+         * 2. Converte os dados brutos da planilha em um array de objetos
+         * *** ATUALIZADO COM "PARADO SEM MOTIVO" ***
+         */
+        function parseExcelData(jsonData) {
+            return jsonData.map(row => {
+                const agingText = row[COL_AGING] ? String(row[COL_AGING]).trim() : '';
+                const match = agingText.match(/(\d+)/);
+                const agingDays = match ? parseInt(match[1], 10) : 0;
+                
+                // --- LÓGICA ATUALIZADA AQUI ---
+                const reasonText = row[COL_MOTIVO_FALHA] ? String(row[COL_MOTIVO_FALHA]).trim() : '';
+
+                return {
+                    remessa: row[COL_REMESSA] ? String(row[COL_REMESSA]).trim() : '',
+                    operator: row[COL_OPERADOR] ? String(row[COL_OPERADOR]).trim() : '',
+                    lastScan: row[COL_ULTIMA_OPERACAO] ? String(row[COL_ULTIMA_OPERACAO]).trim() : '',
+                    aging: agingText,
+                    aging_days: agingDays, 
+                    client: row[COL_CLIENTE] ? String(row[COL_CLIENTE]).trim() : '',
+                    // Se reasonText for vazio, usa "PARADO SEM MOTIVO"
+                    reason: reasonText === '' ? 'PARADO SEM MOTIVO' : reasonText 
+                };
+            });
+        }
+
+        /**
+         * 3. Preenche os filtros com dados únicos da planilha
+         */
+        function initializeFilters() {
+            const uniqueAgingMap = new Map();
+            allPackages.forEach(p => {
+                if(p.aging_days > 0) {
+                    const label = `${p.aging_days} ${p.aging_days === 1 ? 'dia parado' : 'dias parados'}`;
+                    uniqueAgingMap.set(p.aging, label); 
+                } else if (p.aging) {
+                     uniqueAgingMap.set(p.aging, p.aging);
+                }
+            });
+            const uniqueAging = Array.from(uniqueAgingMap, ([value, label]) => ({ value, label }));
+
+            const uniqueOperators = [...new Set(allPackages.map(p => p.operator).filter(Boolean))].sort();
+            // Agora "PARADO SEM MOTIVO" vai aparecer aqui
+            const uniqueReasons = [...new Set(allPackages.map(p => p.reason).filter(Boolean))].sort(); 
+
+            if (filterAging) filterAging.destroy();
+            if (filterOperator) filterOperator.destroy();
+            if (filterReason) filterReason.destroy();
+            
+            filterAging = new Choices('#agingFilter', {
+                choices: uniqueAging,
+                removeItemButton: true, placeholder: true, placeholderValue: 'Todos os Dias',
+            });
+            filterOperator = new Choices('#operatorFilter', {
+                choices: uniqueOperators.map(v => ({ value: v, label: v })),
+                removeItemButton: true, placeholder: true, placeholderValue: 'Todos os Operadores',
+            });
+            filterReason = new Choices('#reasonFilter', {
+                choices: uniqueReasons.map(v => ({ value: v, label: v })),
+                removeItemButton: true, placeholder: true, placeholderValue: 'Todos os Motivos',
+            });
+
+            document.getElementById('agingFilter').addEventListener('change', updateDashboard);
+            document.getElementById('operatorFilter').addEventListener('change', updateDashboard);
+            document.getElementById('reasonFilter').addEventListener('change', updateDashboard);
+        }
+
+        /**
+         * 4. A função principal que recalcula e redesenha tudo
+         */
+        function updateDashboard() {
+            if (allPackages.length === 0) return;
+
+            const selectedAging = filterAging.getValue(true);
+            const selectedOperators = filterOperator.getValue(true);
+            const selectedReasons = filterReason.getValue(true);
+
+            const filteredPackages = allPackages.filter(pkg => {
+                const agingMatch = selectedAging.length === 0 || selectedAging.includes(pkg.aging);
+                const operatorMatch = selectedOperators.length === 0 || selectedOperators.includes(pkg.operator);
+                const reasonMatch = selectedReasons.length === 0 || selectedReasons.includes(pkg.reason);
+                return agingMatch && operatorMatch && reasonMatch;
+            });
+            
+            currentFilteredPackages = filteredPackages;
+            
+            const operatorCounts = {};
+            const reasonCounts = {};
+            
+            filteredPackages.forEach(pkg => {
+                if (pkg.operator) {
+                    operatorCounts[pkg.operator] = (operatorCounts[pkg.operator] || 0) + 1;
+                }
+                if (pkg.reason) {
+                    reasonCounts[pkg.reason] = (reasonCounts[pkg.reason] || 0) + 1;
+                }
+            });
+
+            renderCards(filteredPackages);
+            renderRankTable('operatorRankTable', operatorCounts);
+            renderRankTable('reasonRankTable', reasonCounts);
+            renderDetailsTable(filteredPackages);
+        }
+
+        /**
+         * 5. Renderiza os Cards de Estatística
+         */
+        function renderCards(filteredPackages) {
+            totalPackagesEl.textContent = filteredPackages.length;
+            topOperatorEl.textContent = getTopItem(filteredPackages, 'operator');
+            topReasonEl.textContent = getTopItem(filteredPackages, 'reason');
+        }
+        
+        function getTopItem(packages, key) {
+            if (packages.length === 0) return '--';
+            const counts = {};
+            let maxCount = 0;
+            let topItem = '--';
+            
+            packages.forEach(pkg => {
+                const item = pkg[key];
+                if (item) {
+                    counts[item] = (counts[item] || 0) + 1;
+                    if (counts[item] > maxCount) {
+                        maxCount = counts[item];
+                        topItem = item;
+                    }
+                }
+            });
+            return topItem.length > 20 ? topItem.substring(0, 20) + '...' : topItem;
+        }
+
+        /**
+         * 6. Renderiza as Tabelas de Ranking (Operadores e Motivos)
+         */
+        function renderRankTable(tableId, dataCounts) {
+            const tableBody = document.getElementById(`${tableId}Body`);
+            tableBody.innerHTML = "";
+
+            let rankArray = Object.keys(dataCounts).map(key => ({
+                key: key,
+                count: dataCounts[key]
+            }));
+
+            const { column, order } = sortStates[tableId];
+            rankArray.sort((a, b) => {
+                let valA = a[column]; let valB = b[column];
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                if (valA < valB) return order === 'asc' ? -1 : 1;
+                if (valA > valB) return order === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            updateSortUI(tableId, sortStates[tableId]);
+
+            if (rankArray.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Nenhum dado encontrado.</td></tr>';
+                return;
+            }
+
+            rankArray.forEach(item => {
+                const row = `
+                    <tr>
+                        <td>${item.key}</td>
+                        <td>${item.count}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+        
+        /**
+         * 7. Renderiza a Tabela de Detalhes
+         */
+        function renderDetailsTable(filteredPackages) {
+            const tableBody = document.getElementById('detailsTableBody');
+            tableBody.innerHTML = "";
+
+            const { column, order } = sortStates.detailsTable;
+            filteredPackages.sort((a, b) => {
+                let valA = a[column]; let valB = b[column];
+                if (column === 'aging_days') {
+                    valA = valA || 0; valB = valB || 0;
+                } else if (typeof valA === 'string') {
+                    valA = valA.toLowerCase(); valB = valB.toLowerCase();
+                }
+
+                if (valA < valB) return order === 'asc' ? -1 : 1;
+                if (valA > valB) return order === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            updateSortUI('detailsTable', sortStates.detailsTable);
+
+            if (filteredPackages.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhum pacote encontrado para os filtros selecionados.</td></tr>';
+                return;
+            }
+            
+            const limitedPackages = filteredPackages.slice(0, 500);
+
+            limitedPackages.forEach(pkg => {
+                const diasTexto = pkg.aging_days === 1 ? 'dia parado' : 'dias parados';
+                const displayText = pkg.aging_days > 0 ? `${pkg.aging_days} ${diasTexto}` : pkg.aging;
+                
+                const rowHtml = `
+                    <tr>
+                        <td>${displayText}</td>
+                        <td>${pkg.remessa}</td>
+                        <td>${pkg.operator}</td>
+                        <td>${pkg.reason}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += rowHtml;
+            });
+            
+            if (filteredPackages.length > 500) {
+                tableBody.innerHTML += '<tr><td colspan="4" style="text-align: center; font-style: italic;">Exibindo 500 de ${filteredPackages.length} remessas.</td></tr>';
+            }
+        }
+        
+        /**
+         * 8. Configura os "escutadores" de clique nos cabeçalhos das tabelas
+         */
+        function setupHeaderSorters() {
+            document.querySelectorAll('th[data-sort]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const columnKey = th.dataset.sort;
+                    const tableId = th.closest('table').id;
+                    const state = sortStates[tableId];
+                    
+                    if (state.column === columnKey) {
+                        state.order = state.order === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        state.column = columnKey;
+                        state.order = (tableId.includes('RankTable')) ? 'desc' : 'asc';
+                    }
+                    updateDashboard();
+                });
+            });
+        }
+        
+        /**
+         * 9. Atualiza a UI (setas) dos cabeçalhos
+         */
+        function updateSortUI(tableId, state) {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            
+            table.querySelectorAll('th[data-sort]').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            const activeTh = table.querySelector(`th[data-sort="${state.column}"]`);
+            if (activeTh) {
+                activeTh.classList.add(state.order === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        }
+        
+        /**
+         * 10. Configura os botões de Copiar e Exportar
+         */
+        function setupActionButtons() {
+            document.getElementById('exportButton').addEventListener('click', exportData);
+            document.getElementById('copyButton').addEventListener('click', copyRemessas);
+        }
+        
+        /**
+         * 11. Exporta os dados filtrados para Excel
+         */
+        function exportData() {
+            if (currentFilteredPackages.length === 0) {
+                alert("Não há dados para exportar. Aplique filtros ou carregue um arquivo.");
+                return;
+            }
+            
+            const dataToExport = currentFilteredPackages.map(pkg => {
+                const diasTexto = pkg.aging_days === 1 ? 'dia parado' : 'dias parados';
+                const displayText = pkg.aging_days > 0 ? `${pkg.aging_days} ${diasTexto}` : pkg.aging;
+                
+                return {
+                    "Dias Parados": displayText,
+                    "Remessa": pkg.remessa,
+                    "Operador": pkg.operator,
+                    "Motivo da Falha": pkg.reason
+                }
+            });
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Pacotes Parados");
+            
+            XLSX.writeFile(wb, "relatorio_pacotes_parados.xlsx");
+        }
+        
+        /**
+         * 12. Copia os códigos de remessa para a área de transferência
+         */
+        function copyRemessas() {
+            if (currentFilteredPackages.length === 0) {
+                alert("Não há remessas para copiar.");
+                return;
+            }
+            
+            const remessaList = currentFilteredPackages.map(pkg => pkg.remessa).join('\n');
+            
+            navigator.clipboard.writeText(remessaList).then(() => {
+                showToast("Códigos de remessa copiados!");
+            }, (err) => {
+                alert("Erro ao copiar. Tente novamente.");
+                console.error("Erro ao copiar para clipboard: ", err);
+            });
+        }
+        
+        /**
+         * 13. Mostra uma mensagem de "copiado"
+         */
+        function showToast(message) {
+            const toast = document.getElementById('copyToast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+        
+    </script>
+</body>
+</html>
