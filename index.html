@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard J&T - Controle v7.0 (Filtro > 3 dias)</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: linear-gradient(90deg, #d9534f, #c9302c); color: white; padding: 25px 30px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(217, 83, 79, 0.3); }
+        .header h1 { margin: 0; font-size: 28px; }
+        .header p { margin: 5px 0 0; font-size: 16px; opacity: 0.9; }
+        
+        .main-content { display: flex; flex-direction: column; gap: 20px; }
+        .upload-section, .filter-section, .stats-cards, .table-card { background-color: #ffffff; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .upload-section h2, .filter-section h2, .table-card h2 { margin-top: 0; margin-bottom: 20px; color: #c9302c; font-size: 20px; border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; }
+        
+        .upload-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .upload-group { display: flex; flex-direction: column; }
+        .upload-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #555; }
+        input[type="file"] { font-size: 16px; border: 2px dashed #ccc; border-radius: 6px; padding: 10px; width: 100%; box-sizing: border-box; cursor: pointer; }
+        .load-button { background-color: #d9534f; color: white; padding: 12px 20px; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 15px; width: 100%; grid-column: 1 / -1; }
+        .load-button:hover { background-color: #c9302c; }
+        
+        .filter-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end; }
+        .filter-group { display: flex; flex-direction: column; }
+        .quantity-filter-container { display: flex; gap: 10px; }
+        .quantity-filter-container select, .quantity-filter-container input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .quantity-filter-container input { width: 100%; }
+
+        .stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+        .stat-card { background-color: #f9f9f9; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px; }
+        .stat-card h3 { margin: 0 0 10px; font-size: 14px; color: #555; text-transform: uppercase; }
+        .stat-card-value { font-size: 28px; font-weight: 700; }
+        .stat-card.total { border-left: 5px solid #d9534f; } .stat-card.total .stat-card-value { color: #d9534f; }
+        .stat-card.delivered { border-left: 5px solid #28a745; } .stat-card.delivered .stat-card-value { color: #28a745; }
+        .stat-card.operator { border-left: 5px solid #0275d8; } .stat-card.operator .stat-card-value { color: #0275d8; font-size: 22px; }
+        .stat-card.reason { border-left: 5px solid #5bc0de; } .stat-card.reason .stat-card-value { color: #5bc0de; font-size: 22px; }
+        
+        .rankings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        .table-container { max-height: 500px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 12px 15px; text-align: left; font-size: 14px; }
+        th { background-color: #f4f7f6; font-weight: 600; color: #333; position: sticky; top: 0; z-index: 10; }
+        tr.status-delivered { background-color: #d4edda !important; color: #155724; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; }
+        .badge-pending { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .badge-delivered { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+
+        th[data-sort] { cursor: pointer; user-select: none; position: relative; }
+        th[data-sort]:hover { background-color: #e9ecef; }
+        
+        .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; }
+        .table-header h2 { margin: 0; padding: 0; border: none; color: #c9302c; font-size: 20px; }
+        .table-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .action-button { background-color: #0275d8; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+        .action-button:hover { background-color: #025aa5; }
+        .action-button.export { background-color: #5cb85c; } .action-button.export:hover { background-color: #449d44; }
+        .action-button.whatsapp { background-color: #25D366; } .action-button.whatsapp:hover { background-color: #1ebc59; }
+
+        #copyToast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 16px; position: fixed; z-index: 1001; left: 50%; transform: translateX(-50%); bottom: 30px; font-size: 17px; opacity: 0; transition: opacity 0.3s, visibility 0.3s; }
+        #copyToast.show { visibility: visible; opacity: 1; }
+        .loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        .spinner { border: 8px solid #f3f3f3; border-top: 8px solid #d9534f; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .modal-overlay { display: none; position: fixed; z-index: 1002; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background-color: #fff; padding: 25px; border-radius: 12px; width: 600px; max-width: 90%; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 15px; }
+        .modal-header h3 { margin: 0; color: #333; font-size: 20px; border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; }
+        .modal-body label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        .modal-body select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; margin-bottom: 15px; }
+        .modal-body textarea { width: 100%; height: 350px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; font-size: 14px; resize: vertical; box-sizing: border-box; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 2px solid #f0f2f5; padding-top: 15px; }
+        .btn-close { background-color: #999; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; }
+        .btn-copy { background-color: #25D366; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-exclamation-triangle"></i> Dashboard J&T - Controle v7.0</h1>
+            <p>Foco: Pendências Críticas (> 3 dias)</p>
+        </header>
+
+        <main class="main-content">
+            <section class="upload-section">
+                <h2><i class="fas fa-file-excel"></i> Carregar Relatórios</h2>
+                <div class="upload-controls">
+                    <div class="upload-group">
+                        <label for="fileInput1">1. Relatório de Pacotes Parados</label>
+                        <input type="file" id="fileInput1" accept=".xlsx, .xls, .csv">
+                    </div>
+                    <div class="upload-group">
+                        <label for="fileInput2">2. Base de Dados (Carta de Porte)</label>
+                        <input type="file" id="fileInput2" accept=".xlsx, .xls, .csv">
+                    </div>
+                    <button id="loadButton" class="load-button"><i class="fas fa-upload"></i> Carregar e Cruzar Dados</button>
+                </div>
+            </section>
+            
+            <section class="filter-section">
+                <h2><i class="fas fa-filter"></i> Filtros (Dashboard)</h2>
+                <div class="filter-controls">
+                    <div class="filter-group"><label>Status</label><select id="statusFilter" multiple></select></div>
+                    <div class="filter-group"><label>Dias Parados</label><select id="agingFilter" multiple></select></div>
+                    <div class="filter-group"><label>Responsável</label><select id="responsavelFilter" multiple></select></div>
+                    <div class="filter-group"><label>Motivo</label><select id="reasonFilter" multiple></select></div>
+                    <div class="filter-group">
+                        <label>Volume (Qtd)</label>
+                        <div class="quantity-filter-container">
+                            <select id="qtyOperator"><option value="equal">=</option><option value="greater" selected>></option><option value="less"><</option></select>
+                            <input type="number" id="qtyValue" placeholder="Ex: 5" min="0">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="stats-cards">
+                <div class="stat-card total"><h3><i class="fas fa-box"></i> Total Visualizado</h3><div class="stat-card-value" id="totalPackages">0</div></div>
+                <div class="stat-card delivered"><h3><i class="fas fa-check-circle"></i> Entregues</h3><div class="stat-card-value" id="deliveredPackages">0</div></div>
+                <div class="stat-card operator"><h3><i class="fas fa-user-secret"></i> Top Responsável</h3><div class="stat-card-value" id="topResponsavel">--</div></div>
+                <div class="stat-card reason"><h3><i class="fas fa-exclamation-circle"></i> Top Motivo</h3><div class="stat-card-value" id="topReason">--</div></div>
+            </section>
+
+            <section class="rankings-grid">
+                <div class="table-card"><h2><i class="fas fa-user-secret"></i> Responsáveis</h2><div class="table-container"><table id="responsavelRankTable"><thead><tr><th data-sort="key">Nome</th><th data-sort="count">Qtd</th></tr></thead><tbody id="responsavelRankTableBody"></tbody></table></div></div>
+                <div class="table-card"><h2><i class="fas fa-map-marker-alt"></i> Cidades</h2><div class="table-container"><table id="cityRankTable"><thead><tr><th data-sort="key">Cidade</th><th data-sort="count">Qtd</th></tr></thead><tbody id="cityRankTableBody"></tbody></table></div></div>
+                <div class="table-card"><h2><i class="fas fa-exclamation-circle"></i> Motivos</h2><div class="table-container"><table id="reasonRankTable"><thead><tr><th data-sort="key">Motivo</th><th data-sort="count">Qtd</th></tr></thead><tbody id="reasonRankTableBody"></tbody></table></div></div>
+            </section>
+            
+            <section class="table-card">
+                <div class="table-header">
+                    <h2><i class="fas fa-list-check"></i> Detalhes</h2>
+                    <div class="table-actions">
+                        <button id="waButton" class="action-button whatsapp"><i class="fab fa-whatsapp"></i> Gerar Msg (>3 dias)</button>
+                        <button id="copyButton" class="action-button"><i class="fas fa-copy"></i> Copiar Tabela</button>
+                        <button id="exportButton" class="action-button export"><i class="fas fa-file-excel"></i> Exportar</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="detailsTable">
+                        <thead><tr><th data-sort="is_delivered">St</th><th data-sort="aging_days">Dias</th><th data-sort="remessa">Remessa</th><th data-sort="destinatario">Destinatário</th><th data-sort="responsavel">Resp.</th><th data-sort="cidade">Cidade</th><th data-sort="reason">Motivo</th></tr></thead>
+                        <tbody id="detailsTableBody"><tr><td colspan="7" style="text-align: center;">Carregue os arquivos...</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <div id="waModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header"><h3><i class="fab fa-whatsapp" style="color:#25D366;"></i> Gerador de Mensagem</h3></div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:#666;">* Filtro aplicado: Apenas pacotes com <b>MAIS de 3 dias</b> parados.</p>
+                <label>Motorista:</label><select id="waDriverSelect"><option value="">-- Escolha --</option></select>
+                <label>Mensagem:</label><textarea id="waMessageText" readonly></textarea>
+            </div>
+            <div class="modal-footer"><button id="waCloseBtn" class="btn-close">Fechar</button><button id="waCopyBtn" class="btn-copy">Copiar</button></div>
+        </div>
+    </div>
+    <div class="loading" id="loading" style="display: none;"><div class="spinner"></div><p>Processando...</p></div>
+    <div id="copyToast"></div>
+
+    <script>
+        // CONFIG COLUNAS
+        const COL_STOP_REMESSA = 'Remessa';
+        const COL_STOP_AGING = 'Aging';
+        const COL_STOP_MOTIVO_FALHA = 'Nome de pacote problemático';
+        const COL_PORTE_REMESSA = 'Número de pedido JMS';
+        const COL_PORTE_RESPONSAVEL = 'Responsável pela entrega';
+        const COL_PORTE_CIDADE = 'Cidade Destino';
+        const COL_PORTE_STATUS = 'Marca de assinatura';
+        const COL_PORTE_DESTINATARIO = 'Destinatário';
+        const VALOR_ENTREGUE = 'RECEBIMENTO COM ASSINATURA NORMAL';
+
+        let allPackages = [], currentFilteredPackages = [];
+        let filterStatus, filterAging, filterResponsavel, filterReason;
+        let driversDataMap = {}; 
+        let sortStates = { responsavelRankTable: {c:'count',o:'desc'}, reasonRankTable: {c:'count',o:'desc'}, cityRankTable: {c:'count',o:'desc'}, detailsTable: {c:'aging_days',o:'desc'} };
+
+        // DOM
+        const els = {
+            f1: document.getElementById('fileInput1'), f2: document.getElementById('fileInput2'),
+            load: document.getElementById('loadButton'), spinner: document.getElementById('loading'),
+            total: document.getElementById('totalPackages'), deliv: document.getElementById('deliveredPackages'),
+            topR: document.getElementById('topResponsavel'), topM: document.getElementById('topReason'),
+            op: document.getElementById('qtyOperator'), val: document.getElementById('qtyValue'),
+            waBtn: document.getElementById('waButton'), waModal: document.getElementById('waModal'),
+            waSel: document.getElementById('waDriverSelect'), waTxt: document.getElementById('waMessageText'),
+            waClose: document.getElementById('waCloseBtn'), waCopy: document.getElementById('waCopyBtn')
+        };
+
+        // INIT
+        els.load.addEventListener('click', handleFileLoad);
+        setupSorters(); setupActions();
+        els.op.addEventListener('change', update); els.val.addEventListener('input', update);
+        els.waBtn.addEventListener('click', openWa); els.waClose.addEventListener('click', ()=>els.waModal.style.display='none');
+        els.waCopy.addEventListener('click', copyWa);
+        els.waSel.addEventListener('change', (e)=> els.waTxt.value = e.target.value ? generateMsg(e.target.value) : "");
+        window.onclick = (e) => { if(e.target==els.waModal) els.waModal.style.display='none'; }
+
+        // CORE
+        function readFile(f) { return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>{try{res(XLSX.utils.sheet_to_json(XLSX.read(e.target.result,{type:'array'}).Sheets[XLSX.read(e.target.result,{type:'array'}).SheetNames[0]],{raw:false}));}catch(ER){rej(ER);}};r.readAsArrayBuffer(f);});}
+        
+        async function handleFileLoad() {
+            if(!els.f1.files[0]||!els.f2.files[0]) return alert("Selecione os dois arquivos!");
+            els.spinner.style.display='flex';
+            try {
+                const [j1, j2] = await Promise.all([readFile(els.f1.files[0]), readFile(els.f2.files[0])]);
+                const map = new Map();
+                j2.forEach(r=>{
+                    const k=String(r[COL_PORTE_REMESSA]||'').trim();
+                    if(k) map.set(k,{
+                        r:String(r[COL_PORTE_RESPONSAVEL]||'N/A').trim(),
+                        c:String(r[COL_PORTE_CIDADE]||'N/A').trim(),
+                        s:String(r[COL_PORTE_STATUS]||'').trim().toUpperCase(),
+                        d:String(r[COL_PORTE_DESTINATARIO]||'N/A').trim()
+                    });
+                });
+                allPackages = j1.map(r=>{
+                    const k=String(r[COL_STOP_REMESSA]||'').trim();
+                    const d=map.get(k)||{r:'N/A',c:'N/A',s:'',d:'N/A'};
+                    const agT=String(r[COL_STOP_AGING]||'').trim();
+                    const agN=parseInt((agT.match(/(\d+)/)||['0','0'])[1]);
+                    return {
+                        remessa:k, aging:agT, aging_days:agN,
+                        reason:String(r[COL_STOP_MOTIVO_FALHA]||'PARADO SEM MOTIVO').trim(),
+                        responsavel:d.r, cidade:d.c,
+                        is_delivered:d.s.includes(VALOR_ENTREGUE), destinatario:d.d
+                    };
+                });
+                initFilters(); update();
+            } catch(e){console.error(e);alert("Erro ao ler arquivos.");}
+            finally{els.spinner.style.display='none';}
+        }
+
+        function initFilters() {
+            const ags = [...new Set(allPackages.map(p=>p.aging_days).filter(d=>d>0))].sort((a,b)=>a-b).map(d=>({value:d,label:`${d}d`}));
+            const resps = [...new Set(allPackages.map(p=>p.responsavel).filter(Boolean))].sort();
+            const reas = [...new Set(allPackages.map(p=>p.reason).filter(Boolean))].sort();
+
+            if(filterStatus) [filterStatus,filterAging,filterResponsavel,filterReason].forEach(f=>f.destroy());
+            filterStatus = new Choices('#statusFilter',{choices:[{value:'p',label:'Pendente'},{value:'d',label:'Entregue'}],removeItemButton:true});
+            filterAging = new Choices('#agingFilter',{choices:ags,removeItemButton:true});
+            filterResponsavel = new Choices('#responsavelFilter',{choices:resps.map(v=>({value:v,label:v})),removeItemButton:true});
+            filterReason = new Choices('#reasonFilter',{choices:reas.map(v=>({value:v,label:v})),removeItemButton:true});
+            ['statusFilter','agingFilter','responsavelFilter','reasonFilter'].forEach(id=>document.getElementById(id).addEventListener('change',update));
+        }
+
+        function update() {
+            if(!allPackages.length) return;
+            const s=filterStatus.getValue(true), a=filterAging.getValue(true), r=filterResponsavel.getValue(true), m=filterReason.getValue(true);
+            const op=els.op.value, val=els.val.value===''?null:parseInt(els.val.value);
+            
+            let res = allPackages.filter(p=>{
+                if(s.length && ((s.includes('d')&&!p.is_delivered)||(s.includes('p')&&p.is_delivered))) return false;
+                if(a.length && !a.some(x=>parseInt(x)===p.aging_days)) return false;
+                if(r.length && !r.includes(p.responsavel)) return false;
+                if(m.length && !m.includes(p.reason)) return false;
+                return true;
+            });
+
+            if(val!==null) {
+                const c={}; res.forEach(p=>c[p.responsavel]=(c[p.responsavel]||0)+1);
+                res = res.filter(p=>{const n=c[p.responsavel]||0; return op==='equal'?n===val:op==='greater'?n>val:n<val;});
+            }
+            currentFilteredPackages = res;
+            
+            const rc={}, mc={}, cc={};
+            res.forEach(p=>{ if(p.responsavel)rc[p.responsavel]=(rc[p.responsavel]||0)+1; if(p.reason)mc[p.reason]=(mc[p.reason]||0)+1; if(p.cidade)cc[p.cidade]=(cc[p.cidade]||0)+1; });
+            
+            els.total.textContent = res.length;
+            els.deliv.textContent = res.filter(p=>p.is_delivered).length;
+            els.topR.textContent = getTop(rc); els.topM.textContent = getTop(mc);
+            
+            renderTable('responsavelRankTable',rc); renderTable('reasonRankTable',mc); renderTable('cityRankTable',cc); renderDetails(res);
+        }
+
+        function getTop(o){const k=Object.keys(o).sort((a,b)=>o[b]-o[a])[0]; return k?(k.length>15?k.substr(0,15)+'...':k):'--';}
+        
+        function renderTable(id, data) {
+            const b = document.getElementById(id+'Body'); b.innerHTML='';
+            const arr = Object.keys(data).map(k=>({key:k,count:data[k]}));
+            const {c,o} = sortStates[id];
+            arr.sort((x,y)=>(o==='asc'?1:-1)*(typeof x[c]==='string'?x[c].localeCompare(y[c]):x[c]-y[c]));
+            if(!arr.length) b.innerHTML='<tr><td colspan="2">Vazio</td></tr>';
+            else arr.forEach(i=>b.innerHTML+=`<tr><td>${i.key}</td><td>${i.count}</td></tr>`);
+            updateSortUI(id);
+        }
+
+        function renderDetails(list) {
+            const b = document.getElementById('detailsTableBody'); b.innerHTML='';
+            const {c,o} = sortStates.detailsTable;
+            list.sort((x,y)=>{
+                let vx=x[c], vy=y[c];
+                if(c==='aging_days'){vx=vx||0;vy=vy||0;} else {vx=String(vx).toLowerCase();vy=String(vy).toLowerCase();}
+                return (o==='asc'?1:-1)*(vx<vy?-1:vx>vy?1:0);
+            });
+            updateSortUI('detailsTable');
+            if(!list.length) return b.innerHTML='<tr><td colspan="7" align="center">Vazio</td></tr>';
+            list.slice(0,500).forEach(p=>{
+                b.innerHTML+=`<tr class="${p.is_delivered?'status-delivered':''}">
+                    <td><span class="badge ${p.is_delivered?'badge-delivered':'badge-pending'}">${p.is_delivered?'OK':'PEND'}</span></td>
+                    <td>${p.aging_days}d</td><td><b>${p.remessa}</b></td><td>${p.destinatario}</td><td>${p.responsavel}</td><td>${p.cidade}</td><td>${p.reason}</td>
+                </tr>`;
+            });
+        }
+
+        function cleanMotivo(m) {
+            if(!m) return "S/ Motivo";
+            const upper = m.toUpperCase();
+            if(upper.includes("AUSÊNCIA") || upper.includes("AUSENCIA")) return "Ausente";
+            if(upper.includes("PARADO SEM MOTIVO")) return "Parado";
+            if(upper.includes("ENDEREÇO") || upper.includes("ENDERECO")) return "End. Incorreto";
+            if(upper.includes("ENCOMENDA.EXPEDIDA")) return "Parado"; 
+            if(upper.includes("CLIENTE DESCONHECIDO")) return "Desc. no Local";
+            if(upper.includes("RECUSADO")) return "Recusado";
+            return m.length > 15 ? m.substring(0, 15) + "." : m;
+        }
+
+        function cleanNome(n) {
+            if(!n || n === 'N/A') return "S/ Nome";
+            const parts = n.split(' ');
+            if(parts.length > 2) {
+                let short = parts[0] + " " + parts[1];
+                if(short.length > 20) return n.substring(0, 20) + ".";
+                return short;
+            }
+            return n.length > 20 ? n.substring(0, 20) + "." : n;
+        }
+
+        // --- GERADOR COM FILTRO > 3 DIAS ---
+        function openWa() {
+            if(!currentFilteredPackages.length) return alert("Sem dados.");
+            driversDataMap={};
+            // Aqui agrupa todos pendentes, o filtro ocorre na geração da msg
+            currentFilteredPackages.forEach(p=>{ if(!p.is_delivered) (driversDataMap[p.responsavel]||(driversDataMap[p.responsavel]=[])).push(p); });
+            els.waSel.innerHTML='<option value="">-- Escolha --</option>';
+            Object.keys(driversDataMap).sort().forEach(k=>els.waSel.innerHTML+=`<option value="${k}">${k} (${driversDataMap[k].length} total)</option>`);
+            if(!els.waSel.children.length) alert("Tudo entregue!");
+            else els.waModal.style.display='flex';
+        }
+
+        function generateMsg(driver) {
+            // PEGA TODOS DO MOTORISTA
+            let allPkgs = driversDataMap[driver];
+
+            // APLICA O FILTRO APENAS NA MENSAGEM: SÓ PACOTES COM MAIS DE 3 DIAS
+            const criticalPkgs = allPkgs.filter(p => p.aging_days > 3);
+            
+            // Ordena os críticos
+            criticalPkgs.sort((a,b)=>b.aging_days-a.aging_days);
+
+            // SE NÃO TIVER NENHUM ACIMA DE 3 DIAS, AVISA
+            if (criticalPkgs.length === 0) {
+                return `Olá ${driver},\n\nNo momento, você não possui pacotes críticos (acima de 3 dias) pendentes na lista filtrada.`;
+            }
+
+            const maxD = criticalPkgs[0].aging_days;
+            
+            const list = criticalPkgs.map(p => {
+                const motivoClean = cleanMotivo(p.reason);
+                const nomeClean = cleanNome(p.destinatario);
+                return `📦 ${p.remessa} | ${nomeClean} (${p.aging_days}d) - ${motivoClean}`;
+            }).join('\n');
+
+            return `Olá ${driver}, tudo bem?
+
+Você possui ${criticalPkgs.length} pacotes críticos sem movimentação (antigo: ${maxD} dias).
+Lista (acima de 3 dias):
+${list}
+
+⚠️ Pacotes +5 dias são extraviados auto.
+Dúvidas, contate a base.`;
+        }
+
+        function copyWa() {
+            if(!els.waTxt.value) return;
+            navigator.clipboard.writeText(els.waTxt.value).then(()=>{
+                const t=document.getElementById('copyToast'); t.innerText="Copiado!"; t.classList.add('show');
+                setTimeout(()=>t.classList.remove('show'),2000);
+            });
+        }
+
+        function setupSorters() {
+            document.querySelectorAll('th[data-sort]').forEach(th=>th.addEventListener('click',()=>{
+                const id=th.closest('table').id, k=th.dataset.sort;
+                sortStates[id].o = (sortStates[id].c===k && sortStates[id].o==='asc') ? 'desc':'asc';
+                sortStates[id].c = k; update();
+            }));
+        }
+        function updateSortUI(id){
+            const t=document.getElementById(id), s=sortStates[id];
+            t.querySelectorAll('th').forEach(h=>h.className='');
+            t.querySelector(`th[data-sort="${s.c}"]`).classList.add(s.o==='asc'?'sort-asc':'sort-desc');
+        }
+        function setupActions(){
+            els.waBtn.addEventListener('click', openWa);
+            document.getElementById('exportButton').addEventListener('click',()=>{
+                const ws = XLSX.utils.json_to_sheet(currentFilteredPackages.map(p=>({Status:p.is_delivered?'ENTREGUE':'PENDENTE',Dias:p.aging_days,Remessa:p.remessa,Destinatario:p.destinatario,Resp:p.responsavel,Motivo:p.reason})));
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Dados"); XLSX.writeFile(wb,"Relatorio_Clean.xlsx");
+            });
+            document.getElementById('copyButton').addEventListener('click',()=>{
+                navigator.clipboard.writeText(currentFilteredPackages.map(p=>p.remessa).join('\n')).then(()=>alert('Códigos Copiados!'));
+            });
+        }
+    </script>
+</body>
+</html>
