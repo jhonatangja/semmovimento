@@ -63,6 +63,7 @@
         .action-button:hover { background-color: #025aa5; }
         .action-button.export { background-color: #5cb85c; } .action-button.export:hover { background-color: #449d44; }
         .action-button.whatsapp { background-color: #25D366; } .action-button.whatsapp:hover { background-color: #1ebc59; }
+        .action-button.city-wa { background-color: #6f42c1; } .action-button.city-wa:hover { background-color: #59359a; }
 
         #copyToast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 16px; position: fixed; z-index: 1001; left: 50%; transform: translateX(-50%); bottom: 30px; font-size: 17px; opacity: 0; transition: opacity 0.3s, visibility 0.3s; }
         #copyToast.show { visibility: visible; opacity: 1; }
@@ -79,6 +80,13 @@
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 2px solid #f0f2f5; padding-top: 15px; }
         .btn-close { background-color: #999; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; }
         .btn-copy { background-color: #25D366; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        
+        .city-msg-list { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #f9f9f9; }
+        .city-msg-item { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+        .city-msg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .city-msg-content { width: 100%; height: 120px; font-family: monospace; font-size: 12px; border: 1px solid #ccc; resize: vertical; box-sizing: border-box; padding: 5px; margin-bottom: 5px; }
+        .btn-small-copy { background-color: #25D366; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .btn-small-copy:hover { background-color: #1ebc59; }
     </style>
 </head>
 <body>
@@ -138,7 +146,9 @@
                 <div class="table-header">
                     <h2><i class="fas fa-list-check"></i> Detalhes</h2>
                     <div class="table-actions">
-                        <button id="waButton" class="action-button whatsapp"><i class="fab fa-whatsapp"></i> Gerar Msg (>3 dias)</button>
+                        <button id="waButton" class="action-button whatsapp"><i class="fab fa-whatsapp"></i> Gerar Msg Indiv.</button>
+                        <button id="waCityButton" class="action-button city-wa"><i class="fas fa-city"></i> Cobrança por Cidade</button>
+                        
                         <button id="copyButton" class="action-button"><i class="fas fa-copy"></i> Copiar Tabela</button>
                         <button id="exportButton" class="action-button export"><i class="fas fa-file-excel"></i> Exportar</button>
                     </div>
@@ -164,6 +174,29 @@
             <div class="modal-footer"><button id="waCloseBtn" class="btn-close">Fechar</button><button id="waCopyBtn" class="btn-copy">Copiar</button></div>
         </div>
     </div>
+
+    <div id="waCityModal" class="modal-overlay">
+        <div class="modal-content" style="width: 700px;">
+            <div class="modal-header"><h3><i class="fas fa-city" style="color:#6f42c1;"></i> Cobrança por Cidade</h3></div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:#666;">* Filtro: Apenas motoristas com pacotes <b>> 3 dias</b> na cidade selecionada.</p>
+                <label>Selecione a Cidade:</label>
+                <select id="waCitySelect"><option value="">-- Escolha --</option></select>
+                
+                <div id="waCityStats" style="margin-bottom:10px; font-weight:bold; color:#d9534f; font-size:14px;"></div>
+
+                <label>Mensagens Geradas (Por Motorista):</label>
+                <div id="waCityOutput" class="city-msg-list">
+                    <div style="text-align:center; padding:20px; color:#999;">Selecione uma cidade acima para gerar as mensagens.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="waCityCloseBtn" class="btn-close">Fechar</button>
+                <button id="waCityCopyAllBtn" class="btn-copy" style="background-color:#6f42c1;">Copiar Todas</button>
+            </div>
+        </div>
+    </div>
+
     <div class="loading" id="loading" style="display: none;"><div class="spinner"></div><p>Processando...</p></div>
     <div id="copyToast"></div>
 
@@ -183,6 +216,8 @@
         let filterStatus, filterAging, filterResponsavel, filterReason;
         let driversDataMap = {}; 
         let sortStates = { responsavelRankTable: {c:'count',o:'desc'}, reasonRankTable: {c:'count',o:'desc'}, cityRankTable: {c:'count',o:'desc'}, detailsTable: {c:'aging_days',o:'desc'} };
+        
+        let currentCityData = { city: "", drivers: {} };
 
         // DOM
         const els = {
@@ -191,21 +226,37 @@
             total: document.getElementById('totalPackages'), deliv: document.getElementById('deliveredPackages'),
             topR: document.getElementById('topResponsavel'), topM: document.getElementById('topReason'),
             op: document.getElementById('qtyOperator'), val: document.getElementById('qtyValue'),
+            // WA INDIVIDUAL
             waBtn: document.getElementById('waButton'), waModal: document.getElementById('waModal'),
             waSel: document.getElementById('waDriverSelect'), waTxt: document.getElementById('waMessageText'),
-            waClose: document.getElementById('waCloseBtn'), waCopy: document.getElementById('waCopyBtn')
+            waClose: document.getElementById('waCloseBtn'), waCopy: document.getElementById('waCopyBtn'),
+            // WA CIDADE
+            waCityBtn: document.getElementById('waCityButton'), waCityModal: document.getElementById('waCityModal'),
+            waCitySel: document.getElementById('waCitySelect'), waCityOut: document.getElementById('waCityOutput'),
+            waCityStats: document.getElementById('waCityStats'),
+            waCityClose: document.getElementById('waCityCloseBtn'), waCityCopyAll: document.getElementById('waCityCopyAllBtn')
         };
 
         // INIT
         els.load.addEventListener('click', handleFileLoad);
         setupSorters(); setupActions();
         els.op.addEventListener('change', update); els.val.addEventListener('input', update);
-        els.waBtn.addEventListener('click', openWa); els.waClose.addEventListener('click', ()=>els.waModal.style.display='none');
+        
+        els.waBtn.addEventListener('click', openWa); 
+        els.waClose.addEventListener('click', ()=>els.waModal.style.display='none');
         els.waCopy.addEventListener('click', copyWa);
         els.waSel.addEventListener('change', (e)=> els.waTxt.value = e.target.value ? generateMsg(e.target.value) : "");
-        window.onclick = (e) => { if(e.target==els.waModal) els.waModal.style.display='none'; }
+        
+        els.waCityBtn.addEventListener('click', openWaByCity);
+        els.waCityClose.addEventListener('click', ()=>els.waCityModal.style.display='none');
+        els.waCitySel.addEventListener('change', (e) => renderCityMessages(e.target.value));
+        els.waCityCopyAll.addEventListener('click', copyAllCityMessages);
 
-        // CORE
+        window.onclick = (e) => { 
+            if(e.target==els.waModal) els.waModal.style.display='none'; 
+            if(e.target==els.waCityModal) els.waCityModal.style.display='none';
+        }
+
         function readFile(f) { return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>{try{res(XLSX.utils.sheet_to_json(XLSX.read(e.target.result,{type:'array'}).Sheets[XLSX.read(e.target.result,{type:'array'}).SheetNames[0]],{raw:false}));}catch(ER){rej(ER);}};r.readAsArrayBuffer(f);});}
         
         async function handleFileLoad() {
@@ -335,11 +386,9 @@
             return n.length > 20 ? n.substring(0, 20) + "." : n;
         }
 
-        // --- GERADOR COM FILTRO > 3 DIAS ---
         function openWa() {
             if(!currentFilteredPackages.length) return alert("Sem dados.");
             driversDataMap={};
-            // Aqui agrupa todos pendentes, o filtro ocorre na geração da msg
             currentFilteredPackages.forEach(p=>{ if(!p.is_delivered) (driversDataMap[p.responsavel]||(driversDataMap[p.responsavel]=[])).push(p); });
             els.waSel.innerHTML='<option value="">-- Escolha --</option>';
             Object.keys(driversDataMap).sort().forEach(k=>els.waSel.innerHTML+=`<option value="${k}">${k} (${driversDataMap[k].length} total)</option>`);
@@ -348,44 +397,69 @@
         }
 
         function generateMsg(driver) {
-            // PEGA TODOS DO MOTORISTA
             let allPkgs = driversDataMap[driver];
-
-            // APLICA O FILTRO APENAS NA MENSAGEM: SÓ PACOTES COM MAIS DE 3 DIAS
             const criticalPkgs = allPkgs.filter(p => p.aging_days > 3);
-            
-            // Ordena os críticos
             criticalPkgs.sort((a,b)=>b.aging_days-a.aging_days);
-
-            // SE NÃO TIVER NENHUM ACIMA DE 3 DIAS, AVISA
-            if (criticalPkgs.length === 0) {
-                return `Olá ${driver},\n\nNo momento, você não possui pacotes críticos (acima de 3 dias) pendentes na lista filtrada.`;
-            }
-
+            if (criticalPkgs.length === 0) return `Olá ${driver},\n\nSem pendências críticas (> 3 dias).`;
             const maxD = criticalPkgs[0].aging_days;
-            
-            const list = criticalPkgs.map(p => {
-                const motivoClean = cleanMotivo(p.reason);
-                const nomeClean = cleanNome(p.destinatario);
-                return `📦 ${p.remessa} | ${nomeClean} (${p.aging_days}d) - ${motivoClean}`;
-            }).join('\n');
-
-            return `Olá ${driver}, tudo bem?
-
-Você possui ${criticalPkgs.length} pacotes críticos sem movimentação (antigo: ${maxD} dias).
-Lista (acima de 3 dias):
-${list}
-
-⚠️ Pacotes +5 dias são extraviados auto.
-Dúvidas, contate a base.`;
+            const list = criticalPkgs.map(p => `📦 ${p.remessa} | ${cleanNome(p.destinatario)} (${p.aging_days}d) - ${cleanMotivo(p.reason)}`).join('\n');
+            return `Olá ${driver}, tudo bem?\n\nVocê possui ${criticalPkgs.length} pacotes críticos sem movimentação (antigo: ${maxD} dias).\nLista (acima de 3 dias):\n${list}\n\n⚠️ Pacotes +5 dias são extraviados auto.`;
         }
 
         function copyWa() {
             if(!els.waTxt.value) return;
-            navigator.clipboard.writeText(els.waTxt.value).then(()=>{
-                const t=document.getElementById('copyToast'); t.innerText="Copiado!"; t.classList.add('show');
-                setTimeout(()=>t.classList.remove('show'),2000);
+            navigator.clipboard.writeText(els.waTxt.value).then(showToast);
+        }
+
+        function showToast() {
+            const t=document.getElementById('copyToast'); t.innerText="Copiado!"; t.classList.add('show');
+            setTimeout(()=>t.classList.remove('show'),2000);
+        }
+
+        function openWaByCity() {
+            const criticalTotal = currentFilteredPackages.filter(p => !p.is_delivered && p.aging_days > 3);
+            if(!criticalTotal.length) return alert("Nenhum pacote crítico pendente.");
+            const cities = [...new Set(criticalTotal.map(p => p.cidade).filter(c => c && c !== 'N/A'))].sort();
+            els.waCitySel.innerHTML = '<option value="">-- Escolha a Cidade --</option>';
+            cities.forEach(c => els.waCitySel.innerHTML += `<option value="${c}">${c}</option>`);
+            els.waCityOut.innerHTML = ''; els.waCityStats.innerHTML = '';
+            els.waCityModal.style.display = 'flex';
+        }
+
+        function renderCityMessages(city) {
+            if(!city) return;
+            const cityPkgs = currentFilteredPackages.filter(p => p.cidade === city && !p.is_delivered && p.aging_days > 3);
+            const driverMap = {};
+            cityPkgs.forEach(p => { if(!driverMap[p.responsavel]) driverMap[p.responsavel] = []; driverMap[p.responsavel].push(p); });
+            const drivers = Object.keys(driverMap).sort();
+            currentCityData = { city, drivers: driverMap };
+            els.waCityStats.innerHTML = `Cidade: ${city} | ${drivers.length} Motoristas | Total: ${cityPkgs.length}`;
+            els.waCityOut.innerHTML = '';
+            const cityHeader = `🚨 *MONITORAMENTO - ${city}* 🚨\nPacotes parados há mais de 3 dias - Priorizar entrega ou Fazer Devolução\n`;
+            drivers.forEach(drv => {
+                const pkgs = driverMap[drv]; pkgs.sort((a,b) => b.aging_days - a.aging_days);
+                let blockStr = `🚚 *MOTORISTA: ${drv}* (${pkgs.length} pendências)\n` + pkgs.map(p => `📦 ${p.remessa} | ${cleanNome(p.destinatario)} (${p.aging_days} dias) - ${cleanMotivo(p.reason)}`).join('\n');
+                const div = document.createElement('div');
+                div.className = 'city-msg-item';
+                div.innerHTML = `<div class="city-msg-header"><span>${drv}</span><button class="btn-small-copy" onclick="copyText(this)">Copiar</button></div><textarea class="city-msg-content" readonly>${cityHeader + '➖➖➖➖➖➖➖➖➖➖\n' + blockStr}</textarea>`;
+                els.waCityOut.appendChild(div);
             });
+        }
+
+        window.copyText = function(btn) {
+            const txt = btn.parentElement.nextElementSibling.value;
+            navigator.clipboard.writeText(txt).then(() => { btn.textContent = "Copiado!"; setTimeout(() => btn.textContent = "Copiar", 1500); });
+        }
+
+        function copyAllCityMessages() {
+            const { city, drivers } = currentCityData;
+            if(!city) return;
+            let fullText = `🚨 *MONITORAMENTO - ${city}* 🚨\nPacotes parados há mais de 3 dias - Priorizar entrega ou Fazer Devolução\n\n`;
+            Object.keys(drivers).sort().forEach(drv => {
+                const pkgs = drivers[drv]; pkgs.sort((a,b) => b.aging_days - a.aging_days);
+                fullText += `➖➖➖➖➖➖➖➖➖➖\n🚚 *MOTORISTA: ${drv}* (${pkgs.length} pendências)\n` + pkgs.map(p => `📦 ${p.remessa} | ${cleanNome(p.destinatario)} (${p.aging_days} dias) - ${cleanMotivo(p.reason)}`).join('\n') + `\n\n`;
+            });
+            navigator.clipboard.writeText(fullText).then(showToast);
         }
 
         function setupSorters() {
@@ -401,7 +475,6 @@ Dúvidas, contate a base.`;
             t.querySelector(`th[data-sort="${s.c}"]`).classList.add(s.o==='asc'?'sort-asc':'sort-desc');
         }
         function setupActions(){
-            els.waBtn.addEventListener('click', openWa);
             document.getElementById('exportButton').addEventListener('click',()=>{
                 const ws = XLSX.utils.json_to_sheet(currentFilteredPackages.map(p=>({Status:p.is_delivered?'ENTREGUE':'PENDENTE',Dias:p.aging_days,Remessa:p.remessa,Destinatario:p.destinatario,Resp:p.responsavel,Motivo:p.reason})));
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Dados"); XLSX.writeFile(wb,"Relatorio_Clean.xlsx");
